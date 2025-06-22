@@ -1,0 +1,9 @@
+cpu               = 256
+memory            = 512
+port    = 5000
+tag = "latest"
+replicas     = 1
+subnets           = ["subnet-xxxx", "subnet-yyyy"]
+security_groups   = ["sg-zzzz"]
+app = "hashinator"
+repository_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com/hashinator"

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <title>Despliegue Terraform</title>
+    <link rel="icon" href="https://em-content.zobj.net/thumbs/240/apple/354/cloud_2601-fe0f.png" type="image/png" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <style>
+        /* Loader overlay estilos */
+        #loader-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            flex-direction: column;
+            color: white;
+            font-size: 1.2rem;
+            user-select: none;
+        }
+        .loader {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 60px; height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Modal estilos */
+        #result-modal {
+            display: none;
+            position: fixed;
+            top:0; left:0;
+            width:100vw; height:100vh;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+        #result-modal > div {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            max-width: 600px;
+            width: 90%;
+            position: relative;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        #modal-close-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: transparent;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            line-height: 1;
+        }
+    </style>
+    <script>
+        function autoGrow(element) {
+            element.style.height = "5px";
+            element.style.height = (element.scrollHeight) + "px";
+        }
+
+        window.addEventListener('load', () => {
+            const ta = document.getElementById('buildspec_content');
+            if (ta) autoGrow(ta);
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const form = document.querySelector("form");
+            const loaderOverlay = document.getElementById("loader-overlay");
+            const resultModal = document.getElementById("result-modal");
+            const resultContent = document.getElementById("result-content");
+            const deployBtn = document.getElementById("deployBtn");
+            const destroyBtn = document.getElementById("destroyBtn");
+            const modalCloseBtn = document.getElementById("modal-close-btn");
+
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                loaderOverlay.style.display = "flex";
+                document.body.style.overflow = 'hidden';  // bloquear scroll
+                deployBtn.disabled = true;
+                destroyBtn.disabled = true;
+
+                const formData = new FormData(form);
+
+                try {
+                    const response = await fetch("/", {
+                        method: "POST",
+                        body: formData,
+                        headers: {
+                            "X-Requested-With": "XMLHttpRequest"
+                        }
+                    });
+
+                    const html = await response.text();
+
+                    loaderOverlay.style.display = "none";
+                    document.body.style.overflow = ''; // desbloquear scroll
+
+                    resultContent.innerHTML = html;
+                    resultModal.style.display = "flex";
+
+                    destroyBtn.disabled = false;
+                    deployBtn.disabled = true;
+
+                } catch (err) {
+                    loaderOverlay.style.display = "none";
+                    document.body.style.overflow = ''; // desbloquear scroll
+                    alert("Error en despliegue. Intenta nuevamente.");
+                    deployBtn.disabled = false;
+                    destroyBtn.disabled = true;
+                }
+            });
+
+            modalCloseBtn.addEventListener("click", () => {
+                resultModal.style.display = "none";
+            });
+        });
+
+        function destroyInfra() {
+            if (!confirm("¿Estás seguro de que quieres destruir la infraestructura?")) return;
+
+            const loaderOverlay = document.getElementById("loader-overlay");
+            const resultModal = document.getElementById("result-modal");
+            const resultContent = document.getElementById("result-content");
+            const deployBtn = document.getElementById("deployBtn");
+            const destroyBtn = document.getElementById("destroyBtn");
+
+            loaderOverlay.style.display = "flex";
+            document.body.style.overflow = 'hidden';
+            resultModal.style.display = "none";
+
+            deployBtn.disabled = true;
+            destroyBtn.disabled = true;
+
+            fetch("/destroy", { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" } })
+                .then(response => response.text())
+                .then(html => {
+                    loaderOverlay.style.display = "none";
+                    document.body.style.overflow = ''; // desbloquear scroll
+                    resultContent.innerHTML = html;
+                    resultModal.style.display = "flex";
+
+                    deployBtn.disabled = false;
+                    destroyBtn.disabled = true;
+                })
+                .catch(err => {
+                    loaderOverlay.style.display = "none";
+                    document.body.style.overflow = ''; // desbloquear scroll
+                    alert("Error destruyendo la infraestructura.");
+                    deployBtn.disabled = false;
+                    destroyBtn.disabled = false;
+                });
+        }
+    </script>
+</head>
+<body>
+<div class="container">
+    <h1>🚀 Despliegue Terraform</h1>
+    <form method="post">
+        <label for="app">Nombre de la aplicación (app):</label>
+        <input type="text" id="app" name="app" required value="{{ request.form.app or 'hashinator' }}"/>
+
+        <label for="github_repo_owner">GitHub repo owner:</label>
+        <input type="text" id="github_repo_owner" name="github_repo_owner" required value="{{ request.form.github_repo_owner or 'RafaelRodriguezSanz' }}"/>
+
+        <label for="buildspec_content">Contenido de buildspec.yml:</label>
+        <textarea id="buildspec_content" name="buildspec_content" oninput="autoGrow(this)" required placeholder="Pega aquí el contenido de tu buildspec.yml">{% if request.form.buildspec_content %}{{ request.form.buildspec_content }}{% else %}
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logueando en ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO
+      - echo "Descargando Codigo..."
+      - git clone https://github.com/$GITHUB_REPO_OWNER/$APP
+      - cd $APP
+
+  build:
+    commands:
+      - echo "Construyendo imagen Docker..."
+      - docker build -t $SERVICE:$TAG .
+      - docker tag $SERVICE:$TAG $ECR_REPO:$TAG
+      - docker tag $SERVICE:$TAG $ECR_REPO:latest
+      - docker push $ECR_REPO:$TAG
+      - docker push $ECR_REPO:latest
+
+artifacts:
+  files:
+    - imagedefinitions.json
+{% endif %}</textarea>
+
+        <label for="tag">Tag:</label>
+        <input type="text" id="tag" name="tag" required value="{{ request.form.tag or '1.0.0' }}"/>
+
+        <label for="port">Puerto de la app:</label>
+        <input type="number" id="port" name="port" required min="1" max="65535" value="{{ request.form.port or 5000 }}"/>
+
+        <label for="cpu">CPU (unidades):</label>
+        <input type="number" id="cpu" name="cpu" required min="128" max="4096" step="64" value="{{ request.form.cpu or 256 }}"/>
+
+        <label for="memory">Memoria (MB):</label>
+        <input type="number" id="memory" name="memory" required min="512" max="8192" step="128" value="{{ request.form.memory or 512 }}"/>
+
+        <label for="replicas">Cantidad de réplicas:</label>
+        <input type="number" id="replicas" name="replicas" required min="1" max="10" value="{{ request.form.replicas or 1 }}"/>
+
+        <div class="button-group" style="margin-top: 1rem;">
+            <button id="deployBtn" type="submit">🚀 Desplegar</button>
+            <button id="destroyBtn" type="button" onclick="destroyInfra()" disabled>🧨 Destruir Infra</button>
+        </div>
+    </form>
+
+    <footer class="footer" style="margin-top: 2rem;">
+        <p>© 2025 Rafael Rodriguez & Joaquín Cuitiño. Todos los derechos reservados.</p>
+    </footer>
+</div>
+
+<div id="loader-overlay">
+    <div class="loader"></div>
+    <p>Procesando infraestructura... Por favor, espera.</p>
+</div>
+
+
+<div id="result-modal">
+    <div>
+        <button class="align=right" id="modal-close-btn">&times;</button>
+        <br class="deploy-success">
+        <div id="result-content"></div>
+    </div>
+</div>
+
+</body>
+</html>

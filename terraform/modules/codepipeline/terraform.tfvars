@@ -1,0 +1,1 @@
+imagedefinitions_path = "imagedefinitions.json"

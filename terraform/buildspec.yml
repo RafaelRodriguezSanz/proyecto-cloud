@@ -1,0 +1,23 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logueando en ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO
+      - echo "Descargando Codigo..."
+      - git clone https://github.com/$GITHUB_REPO_OWNER/$APP
+      - cd $APP
+
+  build:
+    commands:
+      - echo "Construyendo imagen Docker..."
+      - docker build -t $SERVICE:$TAG .
+      - docker tag $SERVICE:$TAG $ECR_REPO:$TAG
+      - docker tag $SERVICE:$TAG $ECR_REPO:latest
+      - docker push $ECR_REPO:$TAG
+      - docker push $ECR_REPO:latest
+
+artifacts:
+  files:
+    - imagedefinitions.json
