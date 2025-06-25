@@ -1,1 +1,6 @@
 flask
+authlib
+python-dotenv
+werkzeug
+requests
+boto3

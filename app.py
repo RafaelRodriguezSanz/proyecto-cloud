@@ -1,15 +1,46 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for, session
 import subprocess
 import json
 import os
 import shlex
+from authlib.integrations.flask_client import OAuth
+import boto3
 
 app = Flask(__name__)
+oauth = OAuth(app)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev")
+
+COGNITO_DOMAIN = "https://flask-app-e018c8a2.auth.us-east-1.amazoncognito.com"
+CLIENT_ID = "1gr18p6e3ebcr7fhvtqpelp6ia"
+USER_POOL_ID = "us-east-1_eld79pXif"
+
+oauth.register(
+    name='oidc',
+    authority='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eld79pXif',
+    client_id='1gr18p6e3ebcr7fhvtqpelp6ia',
+    client_secret= None,
+    server_metadata_url='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eld79pXif/.well-known/openid-configuration',
+    client_kwargs={'scope': 'email openid profile'}
+)
+
+app.config.update(
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=False
+)
 
 def tf_format(k, v):
     return f"-var={k}={shlex.quote(str(v))}"
 
+def require_login(f):
+    def wrapper(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
 @app.route("/", methods=["GET", "POST"])
+@require_login
 def index():
     if request.method == "POST":
         action = request.form.get("action", "apply")
@@ -31,6 +62,15 @@ def index():
 
         terraform_vars = [tf_format(k, v) for k, v in data.items()]
 
+        id_token = session.get('id_token')
+        if not id_token:
+            return redirect(url_for('login'))
+
+        creds = get_credentials_from_identity_pool(id_token)
+        os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+        os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretKey"]
+        os.environ["AWS_SESSION_TOKEN"] = creds["SessionToken"]
+
         if action == "destroy":
             cmd = ["terraform", "destroy", "-auto-approve"] + terraform_vars
         else:
@@ -47,7 +87,6 @@ def index():
             output = subprocess.check_output(["terraform", "output", "-json"], cwd="terraform")
             outputs = json.loads(output)
             alb_dns = outputs.get("alb_dns_name", {}).get("value", "No DNS found")
-            alb_dns = "url"
             return f"""
                 <h2 class='deploy-success'>¡Despliegue exitoso!</h2>
                 <p><a class='deploy-link' href='http://{alb_dns}' target='_blank'>{alb_dns}</a></p>
@@ -67,11 +106,51 @@ def index():
     return render_template("form.html")
 
 @app.route("/destroy", methods=["POST"])
+@require_login
 def destroy():
     result = subprocess.run(["terraform", "destroy", "-auto-approve"], cwd="terraform", capture_output=True, text=True)
     if result.returncode != 0:
         return f"<h2>Error al destruir:</h2><pre>{result.stderr}</pre>"
     return "<h2>Infraestructura destruida con éxito ✅</h2>"
+
+@app.route("/login")
+def login():
+    return oauth.oidc.authorize_redirect('http://localhost:80/auth/callback')
+
+@app.route("/auth/callback")
+def auth_callback():
+    token = oauth.oidc.authorize_access_token()
+    id_token = token["id_token"]
+    session['id_token'] = id_token
+    session['user'] = token["userinfo"]
+    session.permanent = True
+    return redirect(url_for("index"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    logout_url = f"{COGNITO_DOMAIN}/logout?client_id={CLIENT_ID}&logout_uri=http://localhost:80/"
+    return redirect(logout_url)
+
+def get_credentials_from_identity_pool(id_token):
+    identity_pool_id = "us-east-1:b6189747-deaf-4032-877d-13a79fad9bbf"
+    user_pool_provider = "cognito-idp.us-east-1.amazonaws.com/" + USER_POOL_ID
+
+    # 1. Get Identity ID
+    cognito_identity = boto3.client("cognito-identity", region_name="us-east-1")
+    identity = cognito_identity.get_id(
+        IdentityPoolId=identity_pool_id,
+        Logins={user_pool_provider: id_token}
+    )
+
+    # 2. Get AWS credentials
+    credentials = cognito_identity.get_credentials_for_identity(
+        IdentityId=identity["IdentityId"],
+        Logins={user_pool_provider: id_token}
+    )
+
+    return credentials["Credentials"]
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
