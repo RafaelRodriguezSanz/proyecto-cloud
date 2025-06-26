@@ -10,16 +10,17 @@ app = Flask(__name__)
 oauth = OAuth(app)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev")
 
-COGNITO_DOMAIN = "https://flask-app-e018c8a2.auth.us-east-1.amazoncognito.com"
-CLIENT_ID = "1gr18p6e3ebcr7fhvtqpelp6ia"
-USER_POOL_ID = "us-east-1_eld79pXif"
+COGNITO_DOMAIN = "https://flask-app-2e9924f0.auth.us-east-1.amazoncognito.com"
+CLIENT_ID = "3n751dbue5mo0l54p1vkp7opj4"
+USER_POOL_ID = "us-east-1_jH6fsG1L4"
+IDENTIY_POOL_ID = "us-east-1:c2813282-b9c0-4bf3-812c-c40fcb4f066e"
 
 oauth.register(
     name='oidc',
-    authority='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eld79pXif',
-    client_id='1gr18p6e3ebcr7fhvtqpelp6ia',
+    authority='https://cognito-idp.us-east-1.amazonaws.com/'+USER_POOL_ID,
+    client_id=CLIENT_ID,
     client_secret= None,
-    server_metadata_url='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eld79pXif/.well-known/openid-configuration',
+    server_metadata_url='https://cognito-idp.us-east-1.amazonaws.com/'+USER_POOL_ID+'/.well-known/openid-configuration',
     client_kwargs={'scope': 'email openid profile'}
 )
 
@@ -134,17 +135,14 @@ def logout():
     return redirect(logout_url)
 
 def get_credentials_from_identity_pool(id_token):
-    identity_pool_id = "us-east-1:b6189747-deaf-4032-877d-13a79fad9bbf"
     user_pool_provider = "cognito-idp.us-east-1.amazonaws.com/" + USER_POOL_ID
 
-    # 1. Get Identity ID
     cognito_identity = boto3.client("cognito-identity", region_name="us-east-1")
     identity = cognito_identity.get_id(
-        IdentityPoolId=identity_pool_id,
+        IdentityPoolId=IDENTIY_POOL_ID,
         Logins={user_pool_provider: id_token}
     )
 
-    # 2. Get AWS credentials
     credentials = cognito_identity.get_credentials_for_identity(
         IdentityId=identity["IdentityId"],
         Logins={user_pool_provider: id_token}

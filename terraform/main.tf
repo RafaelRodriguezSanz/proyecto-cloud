@@ -59,4 +59,5 @@ module "codepipeline" {
   s3_bucket_name = module.s3.bucket_name
   app    = var.app
   tag = var.tag
+  depends_on = [module.ecs]
 }
